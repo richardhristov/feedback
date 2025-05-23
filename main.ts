@@ -15,6 +15,7 @@ const config = {
   whisperServerUrl: "http://127.0.0.1:8080/inference",
   dataDir: path.join(Deno.cwd(), "data"),
   maxTranscriptionsForFeedback: 100,
+  model: "google/gemini-2.0-flash-001",
   feedbackPrompt: `You are an AI assistant providing real-time feedback during a phone call.
 
 Transcript speaker roles:
@@ -59,7 +60,8 @@ function loadConfig() {
       "Maximum transcriptions for feedback",
       (val) => parseInt(val, 10)
     )
-    .option("-p, --prompt <text>", "Feedback prompt template");
+    .option("-p, --prompt <text>", "Feedback prompt template")
+    .option("-o, --model <model>", "OpenRouter model to use for feedback");
   // Explicitly handle help
   if (Deno.args.includes("--help") || Deno.args.includes("-h")) {
     program.outputHelp();
@@ -74,6 +76,7 @@ function loadConfig() {
   if (options.maxTranscriptions)
     config.maxTranscriptionsForFeedback = options.maxTranscriptions;
   if (options.prompt) config.feedbackPrompt = options.prompt;
+  if (options.model) config.model = options.model;
 }
 
 interface TranscriptEntry {
@@ -251,7 +254,7 @@ async function generateFeedback(transcriptions: TranscriptEntry[]) {
       conversationContext
     );
     const { text: feedback } = await generateText({
-      model: openrouter("anthropic/claude-sonnet-4"),
+      model: openrouter(config.model),
       prompt: prompt,
     });
     return feedback;
