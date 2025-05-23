@@ -152,11 +152,30 @@ System Audio → Swift → Raw PCM → TypeScript Handler → Whisper → AI Ana
 
 ## Configuration
 
-You can modify these constants in `main.ts`:
+The application can be configured using command-line options:
 
-- `FEEDBACK_INTERVAL_MS`: How often to provide feedback (default: 15000ms)
-- `MAX_TRANSCRIPTIONS_FOR_FEEDBACK`: Number of recent transcriptions to use for feedback (default: 100)
-- `WHISPER_SERVER_URL`: Local Whisper server endpoint
+```bash
+deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env main.ts [options]
+```
+
+Available options:
+
+- `-i, --interval <ms>` - Feedback interval in milliseconds (default: 15000)
+- `-w, --whisper-url <url>` - Whisper server URL (default: http://127.0.0.1:8080/inference)
+- `-d, --data-dir <path>` - Data directory path for saving transcripts (default: ./data)
+- `-m, --max-transcriptions <number>` - Maximum number of recent transcriptions to use for feedback (default: 100)
+- `-p, --prompt <text>` - Custom feedback prompt template
+- `-o, --model <model>` - OpenRouter model to use for feedback (default: google/gemini-2.0-flash-001)
+
+Example with custom options:
+```bash
+deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env main.ts \
+  --interval 30000 \
+  --whisper-url http://localhost:8080/inference \
+  --data-dir ./my-transcripts \
+  --max-transcriptions 50 \
+  --model "anthropic/claude-sonnet-4"
+```
 
 ## Troubleshooting
 
