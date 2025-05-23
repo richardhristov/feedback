@@ -6,11 +6,13 @@ import { spawn, ChildProcess } from "node:child_process";
 import { mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { Buffer } from "node:buffer";
+import path from "node:path";
 
 // Configuration
 const FEEDBACK_INTERVAL_MS = 15000;
 const WHISPER_SERVER_URL = "http://127.0.0.1:8080/inference";
-const DATA_DIR = "./data";
+const DATA_DIR = path.join(Deno.cwd(), "data");
+const MAX_TRANSCRIPTIONS_FOR_FEEDBACK = 100;
 
 // Microphone audio configuration (for SoX and Whisper)
 const MIC_SAMPLE_RATE = 16000; // 16kHz for Whisper
@@ -56,21 +58,17 @@ function startMicrophoneRecording() {
     MIC_BIT_DEPTH.toString(),
     "-",
   ]);
-
   // Drain stderr from the sox process to prevent pipe buffer blocking
   if (micProcess.stderr) {
     micProcess.stderr.on("data", () => {});
   }
-
   if (!micProcess.stdout) {
     throw new Error("Microphone process stdout is null");
   }
-
   micProcess.stdout.on("data", (chunk: Buffer) => {
     micBuffer = Buffer.concat([micBuffer, chunk]);
   });
-
-  micProcess.on("error", (error: Error) => {
+  micProcess.on("error", (error) => {
     console.error("❌ Microphone recording error:", error);
   });
 }
@@ -80,21 +78,17 @@ function startSystemAudioRecording() {
   systemAudioProcess = spawn("swift", ["run", "SystemAudioCapture"], {
     cwd: Deno.cwd(),
   });
-
   // Drain stderr from the Swift process to prevent pipe buffer blocking
   if (systemAudioProcess.stderr) {
     systemAudioProcess.stderr.on("data", () => {});
   }
-
   if (!systemAudioProcess.stdout) {
     throw new Error("System audio process stdout is null");
   }
-
   systemAudioProcess.stdout.on("data", (chunk: Buffer) => {
     systemBuffer = Buffer.concat([systemBuffer, chunk]);
   });
-
-  systemAudioProcess.on("error", (error: Error) => {
+  systemAudioProcess.on("error", (error) => {
     console.error("❌ System audio recording error:", error);
   });
 }
@@ -159,25 +153,23 @@ async function transcribeAudio(
       tempWavPath,
     ];
     const soxProcess = spawn("sox", [...soxInputArgs, ...soxOutputArgs]);
-
-    soxProcess.stdin?.write(audioBuffer);
-    soxProcess.stdin?.end();
-
-    await new Promise<void>((resolve, reject) => {
+    if (!soxProcess.stdin) {
+      throw new Error("Sox process stdin is null");
+    }
+    soxProcess.stdin.write(audioBuffer);
+    soxProcess.stdin.end();
+    await new Promise((resolve, reject) => {
       soxProcess.on("close", resolve);
       soxProcess.on("error", reject);
     });
-
     const formData = new FormData();
     const wavData = await Deno.readFile(tempWavPath);
     formData.append("file", new Blob([wavData]), "audio.wav");
     formData.append("response_format", "json");
-
     const response = await fetch(WHISPER_SERVER_URL, {
       method: "POST",
       body: formData,
     });
-
     if (!response.ok) {
       throw new Error(`Whisper server error: ${response.statusText}`);
     }
@@ -197,6 +189,7 @@ async function transcribeAudio(
 async function generateFeedback(transcriptions: TranscriptEntry[]) {
   try {
     const conversationContext = transcriptions
+      .slice(-MAX_TRANSCRIPTIONS_FOR_FEEDBACK)
       .map((entry) => `[${entry.speaker}]: ${entry.text}`)
       .join("\n");
     const prompt = `You are an AI assistant providing real-time feedback during a phone call. 
@@ -224,10 +217,8 @@ Keep feedback concise (1-2 sentences max) and supportive.`;
 
 async function processAudioAndProvideFeedback() {
   console.log("🔄 Processing audio for feedback...");
-
   const transcriptions: TranscriptEntry[] = [];
   const timestamp = new Date().toISOString();
-
   // Process microphone audio if we have any
   if (micBuffer.length > 0) {
     try {
@@ -244,7 +235,6 @@ async function processAudioAndProvideFeedback() {
     }
     micBuffer = Buffer.alloc(0); // Clear the buffer after processing
   }
-
   // Process system audio if we have any
   if (systemBuffer.length > 0) {
     try {
@@ -261,15 +251,12 @@ async function processAudioAndProvideFeedback() {
     }
     systemBuffer = Buffer.alloc(0); // Clear the buffer after processing
   }
-
   if (transcriptions.length === 0) {
     console.log("ℹ️  No speech detected in recent audio");
     return;
   }
-
   // Add transcriptions to the log
   transcriptLog.push(...transcriptions);
-
   const feedback = await generateFeedback(transcriptLog);
   console.log("\n💡 FEEDBACK:", feedback);
   console.log("─".repeat(60));
@@ -287,14 +274,11 @@ function startRecording() {
     console.log("Already recording...");
     return;
   }
-
   console.log("🎙️  Starting live call feedback session...");
   isRecording = true;
-
   startMicrophoneRecording();
   startSystemAudioRecording();
   startFeedbackTimer();
-
   console.log("✅ Recording started. Press Ctrl+C to stop.");
 }
 
@@ -304,14 +288,16 @@ async function stopRecording() {
   }
   console.log("🛑 Stopping recording...");
   isRecording = false;
-
-  micProcess?.kill();
-  systemAudioProcess?.kill();
+  if (micProcess) {
+    micProcess.kill();
+  }
+  if (systemAudioProcess) {
+    systemAudioProcess.kill();
+  }
   if (feedbackTimer) {
     clearInterval(feedbackTimer);
     feedbackTimer = undefined;
   }
-
   // Process any remaining audio before stopping
   await processAudioAndProvideFeedback();
   await saveTranscriptLog();

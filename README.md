@@ -6,9 +6,10 @@ A macOS application that provides real-time feedback during phone calls by recor
 
 - **Invisible to other party**: Records system audio and microphone separately without interfering with the call
 - **Real-time transcription**: Uses local Whisper server for speech-to-text
-- **AI feedback**: Provides actionable communication feedback every 15-30 seconds
+- **AI feedback**: Provides actionable communication feedback every 15 seconds
 - **Complete transcript logging**: Saves timestamped transcripts with speaker identification
 - **Cross-platform audio**: Uses ScreenCaptureKit for system audio and SoX for microphone
+- **Context-aware feedback**: Uses last 100 transcriptions for relevant feedback
 
 ## Prerequisites
 
@@ -71,20 +72,15 @@ You can download Whisper models using:
 ### Start Recording
 
 ```bash
-./main.ts
-```
-
-Or using deno directly:
-```bash
 deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env main.ts
 ```
 
 ### During the Call
 
 - The application will start recording both your microphone and system audio
-- Every 15 seconds, it processes the recent audio for transcription
+- Every 15 seconds, it processes the accumulated audio for transcription
 - AI feedback appears in the terminal with actionable communication tips
-- All transcripts are automatically saved to timestamped JSON files in `./data/`
+- All transcripts are automatically saved to timestamped JSON files in the `data/` directory
 
 ### Stop Recording
 
@@ -107,7 +103,7 @@ The application provides console output like:
 ```
 
 ### Transcript Logs
-Transcripts are saved as JSON files in the `./data/` directory:
+Transcripts are saved as JSON files in the `data/` directory:
 
 ```json
 [
@@ -120,11 +116,6 @@ Transcripts are saved as JSON files in the `./data/` directory:
     "timestamp": "2024-01-15T10:30:18.456Z",
     "speaker": "system",
     "text": "Of course! I'm excited to discuss this opportunity."
-  },
-  {
-    "timestamp": "2024-01-15T10:30:45.789Z",
-    "speaker": "system",
-    "text": "[FEEDBACK]: You're maintaining good energy and asking thoughtful questions."
   }
 ]
 ```
@@ -163,8 +154,8 @@ System Audio → Swift → Raw PCM → TypeScript Handler → Whisper → AI Ana
 
 You can modify these constants in `main.ts`:
 
-- `FEEDBACK_INTERVAL`: How often to provide feedback (default: 15 seconds)
-- `SAMPLE_RATE`: Audio sample rate (default: 16kHz for Whisper)
+- `FEEDBACK_INTERVAL_MS`: How often to provide feedback (default: 15000ms)
+- `MAX_TRANSCRIPTIONS_FOR_FEEDBACK`: Number of recent transcriptions to use for feedback (default: 100)
 - `WHISPER_SERVER_URL`: Local Whisper server endpoint
 
 ## Troubleshooting
@@ -191,7 +182,7 @@ You can modify these constants in `main.ts`:
 - All audio processing happens locally
 - Only transcribed text is sent to OpenRouter for feedback
 - Raw audio is never transmitted externally
-- Transcripts are saved locally in the `./data/` directory
+- Transcripts are saved locally in the `data/` directory
 
 ## License
 
