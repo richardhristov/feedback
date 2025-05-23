@@ -51,7 +51,7 @@ The application requires the following macOS permissions:
 - **Screen Recording** (for system audio capture via ScreenCaptureKit)
 - **Microphone Access** (for recording your voice)
 
-These will be requested automatically when you first run the application.
+These permissions will be requested automatically when you first run the application. If you need to modify permissions later, you can do so in System Settings → Privacy & Security → Screen Recording and Microphone.
 
 ### 4. Start Whisper Server
 
