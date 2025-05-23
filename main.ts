@@ -7,14 +7,33 @@ import { mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { Buffer } from "node:buffer";
 import path from "node:path";
+import { Command } from "npm:commander@14.0.0";
 
-// Configuration
-const FEEDBACK_INTERVAL_MS = 15000;
-const WHISPER_SERVER_URL = "http://127.0.0.1:8080/inference";
-const DATA_DIR = path.join(Deno.cwd(), "data");
-const MAX_TRANSCRIPTIONS_FOR_FEEDBACK = 100;
+// Default configuration
+const config = {
+  feedbackIntervalMs: 15000,
+  whisperServerUrl: "http://127.0.0.1:8080/inference",
+  dataDir: path.join(Deno.cwd(), "data"),
+  maxTranscriptionsForFeedback: 100,
+  feedbackPrompt: `You are an AI assistant providing real-time feedback during a phone call.
 
-// Microphone audio configuration (for SoX and Whisper)
+Transcript speaker roles:
+- [microphone]: The user (the person speaking into the microphone)
+- [system]: The other party on the call (captured from system audio)
+
+Recent conversation:
+{context}
+
+Provide brief, actionable feedback for the user (microphone speaker) on their communication. Focus on:
+- Tone and clarity
+- Listening vs. talking balance
+- Key points they should address
+- Engagement level
+
+Keep feedback concise (1-2 sentences max) and supportive.`,
+};
+
+// Audio configuration (not user-configurable)
 const MIC_SAMPLE_RATE = 16000; // 16kHz for Whisper
 const MIC_CHANNELS = 1; // Mono for simplicity
 const MIC_BIT_DEPTH = 16; // Signed integer
@@ -23,6 +42,39 @@ const MIC_BIT_DEPTH = 16; // Signed integer
 const SYSTEM_AUDIO_SAMPLE_RATE = 48000;
 const SYSTEM_AUDIO_CHANNELS = 2;
 const SYSTEM_AUDIO_BIT_DEPTH = 32; // Floating-point
+
+function loadConfig() {
+  const program = new Command();
+  program
+    .name("feedback")
+    .description("Live call feedback application")
+    .version("1.0.0")
+    .option("-i, --interval <ms>", "Feedback interval in milliseconds", (val) =>
+      parseInt(val, 10)
+    )
+    .option("-w, --whisper-url <url>", "Whisper server URL")
+    .option("-d, --data-dir <path>", "Data directory path")
+    .option(
+      "-m, --max-transcriptions <number>",
+      "Maximum transcriptions for feedback",
+      (val) => parseInt(val, 10)
+    )
+    .option("-p, --prompt <text>", "Feedback prompt template");
+  // Explicitly handle help
+  if (Deno.args.includes("--help") || Deno.args.includes("-h")) {
+    program.outputHelp();
+    Deno.exit(0);
+  }
+  program.parse(Deno.args);
+  const options = program.opts();
+  // Override with command line options
+  if (options.interval) config.feedbackIntervalMs = options.interval;
+  if (options.whisperUrl) config.whisperServerUrl = options.whisperUrl;
+  if (options.dataDir) config.dataDir = options.dataDir;
+  if (options.maxTranscriptions)
+    config.maxTranscriptionsForFeedback = options.maxTranscriptions;
+  if (options.prompt) config.feedbackPrompt = options.prompt;
+}
 
 interface TranscriptEntry {
   timestamp: string;
@@ -95,7 +147,7 @@ function startSystemAudioRecording() {
 
 async function saveTranscriptLog() {
   try {
-    const logPath = join(DATA_DIR, `transcript_${sessionId}.json`);
+    const logPath = join(config.dataDir, `transcript_${sessionId}.json`);
     await Deno.writeTextFile(logPath, JSON.stringify(transcriptLog, null, 2));
   } catch (error) {
     console.error("❌ Failed to save transcript:", error);
@@ -166,7 +218,7 @@ async function transcribeAudio(
     const wavData = await Deno.readFile(tempWavPath);
     formData.append("file", new Blob([wavData]), "audio.wav");
     formData.append("response_format", "json");
-    const response = await fetch(WHISPER_SERVER_URL, {
+    const response = await fetch(config.whisperServerUrl, {
       method: "POST",
       body: formData,
     });
@@ -188,22 +240,16 @@ async function transcribeAudio(
 
 async function generateFeedback(transcriptions: TranscriptEntry[]) {
   try {
-    const conversationContext = transcriptions
-      .slice(-MAX_TRANSCRIPTIONS_FOR_FEEDBACK)
+    const recentTranscripts = transcriptions.slice(
+      -config.maxTranscriptionsForFeedback
+    );
+    const conversationContext = recentTranscripts
       .map((entry) => `[${entry.speaker}]: ${entry.text}`)
       .join("\n");
-    const prompt = `You are an AI assistant providing real-time feedback during a phone call. 
-
-Recent conversation:
-${conversationContext}
-
-Provide brief, actionable feedback for the user (microphone speaker) on their communication. Focus on:
-- Tone and clarity
-- Listening vs. talking balance
-- Key points they should address
-- Engagement level
-
-Keep feedback concise (1-2 sentences max) and supportive.`;
+    const prompt = config.feedbackPrompt.replace(
+      "{context}",
+      conversationContext
+    );
     const { text: feedback } = await generateText({
       model: openrouter("anthropic/claude-sonnet-4"),
       prompt: prompt,
@@ -266,7 +312,7 @@ async function processAudioAndProvideFeedback() {
 function startFeedbackTimer() {
   feedbackTimer = setInterval(async () => {
     await processAudioAndProvideFeedback();
-  }, FEEDBACK_INTERVAL_MS);
+  }, config.feedbackIntervalMs);
 }
 
 function startRecording() {
@@ -305,8 +351,9 @@ async function stopRecording() {
 }
 
 // Main execution
-if (!existsSync(DATA_DIR)) {
-  mkdirSync(DATA_DIR, { recursive: true });
+loadConfig();
+if (!existsSync(config.dataDir)) {
+  mkdirSync(config.dataDir, { recursive: true });
 }
 
 Deno.addSignalListener("SIGINT", async () => {
