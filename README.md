@@ -199,7 +199,7 @@ deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-fi
 ## Privacy
 
 - All audio processing happens locally
-- Only transcribed text is sent to OpenRouter for feedback
+- Only transcribed text is sent to OpenRouter for feedback (TODO: Add local LLM server support)
 - Raw audio is never transmitted externally
 - Transcripts are saved locally in the `data/` directory
 
