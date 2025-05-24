@@ -32,6 +32,21 @@ Provide brief, actionable feedback for the user (microphone speaker) on their co
 - Engagement level
 
 Keep feedback concise (1-2 sentences max) and supportive.`,
+  summaryPrompt: `You are an AI assistant providing a summary of a phone call conversation.
+
+Transcript speaker roles:
+- [microphone]: The user (the person speaking into the microphone)
+- [system]: The other party on the call (captured from system audio)
+
+Conversation:
+{context}
+
+Provide a concise summary of the conversation, highlighting:
+- Main topics discussed
+- Key decisions or action items
+- Overall tone and outcome
+
+Keep the summary clear and professional.`,
 };
 
 // Audio configuration (not user-configurable)
@@ -61,6 +76,7 @@ function loadConfig() {
       (val) => parseInt(val, 10)
     )
     .option("-p, --prompt <text>", "Feedback prompt template")
+    .option("-s, --summary-prompt <text>", "Summary prompt template")
     .option("-o, --model <model>", "OpenRouter model to use for feedback");
   // Explicitly handle help
   if (Deno.args.includes("--help") || Deno.args.includes("-h")) {
@@ -76,6 +92,7 @@ function loadConfig() {
   if (options.maxTranscriptions)
     config.maxTranscriptionsForFeedback = options.maxTranscriptions;
   if (options.prompt) config.feedbackPrompt = options.prompt;
+  if (options.summaryPrompt) config.summaryPrompt = options.summaryPrompt;
   if (options.model) config.model = options.model;
 }
 
@@ -331,6 +348,26 @@ function startRecording() {
   console.log("✅ Recording started. Press Ctrl+C to stop.");
 }
 
+async function generateSummary(transcriptions: TranscriptEntry[]) {
+  try {
+    const conversationContext = transcriptions
+      .map((entry) => `[${entry.speaker}]: ${entry.text}`)
+      .join("\n");
+    const prompt = config.summaryPrompt.replace(
+      "{context}",
+      conversationContext
+    );
+    const { text: summary } = await generateText({
+      model: openrouter(config.model),
+      prompt: prompt,
+    });
+    return summary;
+  } catch (error) {
+    console.error("❌ Failed to generate summary:", error);
+    return "";
+  }
+}
+
 async function stopRecording() {
   if (!isRecording) {
     return;
@@ -349,6 +386,12 @@ async function stopRecording() {
   }
   // Process any remaining audio before stopping
   await processAudioAndProvideFeedback();
+  // Generate and display final summary
+  console.log("\n📝 Generating conversation summary...");
+  const summary = await generateSummary(transcriptLog);
+  console.log("\n📋 CONVERSATION SUMMARY:");
+  console.log(summary);
+  console.log("─".repeat(60));
   await saveTranscriptLog();
   console.log(`✅ Session saved to: transcript_${sessionId}.json`);
 }
