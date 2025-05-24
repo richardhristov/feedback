@@ -1,6 +1,5 @@
 #!/usr/bin/env -S deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env
 
-import { openrouter } from "npm:@openrouter/ai-sdk-provider@0.4.6";
 import { generateText } from "npm:ai@4.3.16";
 import { spawn, ChildProcess } from "node:child_process";
 import { mkdirSync, existsSync } from "node:fs";
@@ -8,14 +7,14 @@ import { join } from "node:path";
 import { Buffer } from "node:buffer";
 import path from "node:path";
 import { Command } from "npm:commander@14.0.0";
+import { registry } from "./registry.ts";
 
 // Default configuration
 const config = {
   feedbackIntervalMs: 15000,
-  whisperServerUrl: "http://127.0.0.1:8080/inference",
   dataDir: path.join(Deno.cwd(), "data"),
-  maxTranscriptionsForFeedback: 100,
-  model: "google/gemini-2.0-flash-001",
+  maxTranscriptionsForFeedback: 50,
+  modelId: "openrouter:google/gemini-2.0-flash-001",
   feedbackPrompt: `You are an AI assistant providing real-time feedback during a phone call.
 
 Transcript speaker roles:
@@ -68,7 +67,6 @@ function loadConfig() {
     .option("-i, --interval <ms>", "Feedback interval in milliseconds", (val) =>
       parseInt(val, 10)
     )
-    .option("-w, --whisper-url <url>", "Whisper server URL")
     .option("-d, --data-dir <path>", "Data directory path")
     .option(
       "-m, --max-transcriptions <number>",
@@ -77,7 +75,10 @@ function loadConfig() {
     )
     .option("-p, --prompt <text>", "Feedback prompt template")
     .option("-s, --summary-prompt <text>", "Summary prompt template")
-    .option("-o, --model <model>", "OpenRouter model to use for feedback");
+    .option(
+      "-o, --model <model>",
+      "Model ID in format openrouter:model (e.g., openrouter:google/gemini-2.0-flash-001)"
+    );
   // Explicitly handle help
   if (Deno.args.includes("--help") || Deno.args.includes("-h")) {
     program.outputHelp();
@@ -87,13 +88,12 @@ function loadConfig() {
   const options = program.opts();
   // Override with command line options
   if (options.interval) config.feedbackIntervalMs = options.interval;
-  if (options.whisperUrl) config.whisperServerUrl = options.whisperUrl;
   if (options.dataDir) config.dataDir = options.dataDir;
   if (options.maxTranscriptions)
     config.maxTranscriptionsForFeedback = options.maxTranscriptions;
   if (options.prompt) config.feedbackPrompt = options.prompt;
   if (options.summaryPrompt) config.summaryPrompt = options.summaryPrompt;
-  if (options.model) config.model = options.model;
+  if (options.model) config.modelId = options.model;
 }
 
 interface TranscriptEntry {
@@ -238,10 +238,13 @@ async function transcribeAudio(
     const wavData = await Deno.readFile(tempWavPath);
     formData.append("file", new Blob([wavData]), "audio.wav");
     formData.append("response_format", "json");
-    const response = await fetch(config.whisperServerUrl, {
-      method: "POST",
-      body: formData,
-    });
+    const response = await fetch(
+      Deno.env.get("WHISPER_CPP_URL") || "http://127.0.0.1:8080/inference",
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
     if (!response.ok) {
       throw new Error(`Whisper server error: ${response.statusText}`);
     }
@@ -271,7 +274,7 @@ async function generateFeedback(transcriptions: TranscriptEntry[]) {
       conversationContext
     );
     const { text: feedback } = await generateText({
-      model: openrouter(config.model),
+      model: registry.languageModel(config.modelId as `${string}:${string}`),
       prompt: prompt,
     });
     return feedback;
@@ -358,7 +361,7 @@ async function generateSummary(transcriptions: TranscriptEntry[]) {
       conversationContext
     );
     const { text: summary } = await generateText({
-      model: openrouter(config.model),
+      model: registry.languageModel(config.modelId as `${string}:${string}`),
       prompt: prompt,
     });
     return summary;
@@ -386,6 +389,12 @@ async function stopRecording() {
   }
   // Process any remaining audio before stopping
   await processAudioAndProvideFeedback();
+  if (transcriptLog.length === 0) {
+    console.log(
+      `No transcriptions found for session ${sessionId}, not saving transcript log or generating summary`
+    );
+    return;
+  }
   // Generate and display final summary
   console.log("\n📝 Generating conversation summary...");
   const summary = await generateSummary(transcriptLog);

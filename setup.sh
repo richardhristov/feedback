@@ -38,11 +38,8 @@ fi
 # Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
     echo "📝 Creating .env file..."
-    cat > .env << 'EOF'
-# OpenRouter API Key
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-EOF
-    echo "⚠️  Please edit .env file and add your OpenRouter API key"
+    cp .env.example .env
+    echo "⚠️  Please edit .env file and add your API keys"
 fi
 
 # Create data directory
@@ -56,7 +53,7 @@ echo ""
 echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
-echo "1. Edit .env file and add your OpenRouter API key"
+echo "1. Edit .env file and add your API keys"
 echo "2. Start Whisper server: "
 echo "   cd whisper.cpp && ./server -m models/ggml-base.en.bin --port 8080"
 echo "3. Run the application: ./main.ts"

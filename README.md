@@ -1,208 +1,178 @@
-# Live Call Feedback Application
+# Live Call Feedback
 
-A macOS application that provides real-time feedback during phone calls by recording system audio and microphone input, transcribing speech using Whisper, and generating AI-powered feedback using OpenRouter.
+A macOS application that provides real-time, AI-powered feedback during phone calls by capturing system and microphone audio locally, transcribing speech with Whisper, and analyzing conversation dynamics.
+
+## Table of Contents
+
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Real-Time Feedback](#real-time-feedback)
+  - [Stopping and Summary](#stopping-and-summary)
+  - [Testing System Audio Capture](#testing-system-audio-capture)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Audio Pipeline](#audio-pipeline)
+- [AI Provider Registry](#ai-provider-registry)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
-- **Invisible to other party**: Records system audio and microphone separately without interfering with the call
-- **Real-time transcription**: Uses local Whisper server for speech-to-text
-- **AI feedback**: Provides actionable communication feedback every 15 seconds
-- **Complete transcript logging**: Saves timestamped transcripts with speaker identification
-- **Cross-platform audio**: Uses ScreenCaptureKit for system audio and SoX for microphone
-- **Context-aware feedback**: Uses last 100 transcriptions for relevant feedback
+- **Invisible to other party**: Captures system audio and microphone separately without interference.
+- **Real-time transcription**: Processes audio every interval (default 15s) via a local Whisper server.
+- **AI feedback**: Generates concise, actionable feedback (1-2 sentences) on tone, clarity, and engagement.
+- **Conversation summary**: Automatically generates a summary at the end of the call.
+- **Transcript logging**: Saves timestamped JSON transcripts in `data/`.
+- **Customizable**: Adjust interval, prompts, model selection, and data directory via CLI flags.
+- **Multiple AI providers**: Supports OpenRouter, OpenAI, Anthropic, and local Ollama.
 
 ## Prerequisites
 
-1. **macOS 13+** (required for ScreenCaptureKit)
-2. **Deno** - [Install Deno](https://deno.land/manual/getting_started/installation)
-3. **Swift** - Xcode Command Line Tools
-4. **SoX** - Audio processing library
-   ```bash
-   brew install sox
-   ```
-5. **Whisper.cpp server** - Local STT server
-6. **OpenRouter API key** - For AI feedback
+- **macOS 13+** (for ScreenCaptureKit)
+- **Deno** (https://deno.land)
+- **Swift 5.9+** (Xcode Command Line Tools)
+- **SoX** (`brew install sox`)
+- **whisper.cpp** (local STT server)
+- **API keys / endpoints**:
+  - `OPENROUTER_API_KEY` (OpenRouter)
+  - `OPENAI_API_KEY` (OpenAI)
+  - `ANTHROPIC_API_KEY` (Anthropic)
+  - `OLLAMA_BASE_URL` (for local Ollama server, default `http://127.0.0.1:11434/api`)
+  - `WHISPER_CPP_URL` (URL for the local whisper.cpp server, default `http://127.0.0.1:8080/inference`)
 
-## Setup
+## Installation
 
-### 1. Install Dependencies
-
-```bash
-# Install SoX for audio processing
-brew install sox
-
-# Clone whisper.cpp and build server (if not already done)
-git clone https://github.com/ggerganov/whisper.cpp.git
-cd whisper.cpp
-make server
-```
-
-### 2. Environment Configuration
-
-Create a `.env` file in the project root:
+Clone the repository and run the setup script:
 
 ```bash
-OPENROUTER_API_KEY=your_openrouter_api_key_here
+git clone https://github.com/richardhristov/feedback
+cd feedback
+./setup.sh
 ```
 
-### 3. Permissions
+The setup script will:
 
-The application requires the following macOS permissions:
-- **Screen Recording** (for system audio capture via ScreenCaptureKit)
-- **Microphone Access** (for recording your voice)
+- Verify macOS and tool installations (Deno, SoX, Swift).
+- Create a `.env` file template.
+- Build the Swift `SystemAudioCapture` executable.
+- Create the `data/` directory.
 
-These permissions will be requested automatically when you first run the application. If you need to modify permissions later, you can do so in System Settings → Privacy & Security → Screen Recording and Microphone.
+Edit `.env` and populate your API keys.
 
-### 4. Start Whisper Server
-
-Before running the application, start the local Whisper server:
+Start your local Whisper server:
 
 ```bash
 cd whisper.cpp
 ./server -m models/ggml-base.en.bin --port 8080
 ```
 
-You can download Whisper models using:
-```bash
-./models/download-ggml-model.sh base.en
-```
-
 ## Usage
 
-### Start Recording
+### Real-Time Feedback
+
+Run the application with default settings (using the executable script):
 
 ```bash
-deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env main.ts
+chmod +x main.ts    # only needed once
+./main.ts
 ```
 
-### During the Call
+Custom options (using the script):
 
-- The application will start recording both your microphone and system audio
-- Every 15 seconds, it processes the accumulated audio for transcription
-- AI feedback appears in the terminal with actionable communication tips
-- All transcripts are automatically saved to timestamped JSON files in the `data/` directory
-
-### Stop Recording
-
-Press `Ctrl+C` to gracefully stop the recording and save the final transcript.
-
-## Output
-
-### Real-time Feedback
-The application provides console output like:
-```
-🎙️  Starting live call feedback session...
-🎤 Starting microphone recording...
-🔊 Starting system audio recording...
-✅ Recording started. Press Ctrl+C to stop.
-
-🔄 Processing audio for feedback...
-
-💡 FEEDBACK: You're speaking clearly but try to leave more pause for the other person to respond. Consider asking an open-ended question.
-────────────────────────────────────────────────────────────────
+```bash
+./main.ts --interval 30000 \
+  --data-dir ./my-transcripts \
+  --max-transcriptions 50 \
+  --prompt "Custom feedback prompt with {context}" \
+  --summary-prompt "Custom summary prompt with {context}" \
+  --model "anthropic:claude-3-sonnet-20240229"
 ```
 
-### Transcript Logs
-Transcripts are saved as JSON files in the `data/` directory:
+#### CLI Options
 
-```json
-[
-  {
-    "timestamp": "2024-01-15T10:30:15.123Z",
-    "speaker": "microphone",
-    "text": "Hello, thanks for taking the time to speak with me today."
-  },
-  {
-    "timestamp": "2024-01-15T10:30:18.456Z",
-    "speaker": "system",
-    "text": "Of course! I'm excited to discuss this opportunity."
-  }
-]
+- `-i, --interval <ms>`: Feedback interval in milliseconds (default: 15000).
+- `-d, --data-dir <path>`: Path to save transcripts (default: `./data`).
+- `-m, --max-transcriptions <n>`: Maximum recent transcripts for feedback (default: 100).
+- `-p, --prompt <text>`: Feedback prompt template.
+- `-s, --summary-prompt <text>`: Summary prompt template.
+- `-o, --model <provider:model>`: AI model (e.g., `openrouter:google/gemini-2.0-flash-001`).
+
+### Stopping and Summary
+
+Press `Ctrl+C` to stop recording. The application will process any remaining audio, save transcripts, and display a conversation summary:
+
+```
+🛑 Stopping recording...
+📝 Generating conversation summary...
+
+📋 CONVERSATION SUMMARY:
+- Main topics discussed
+- Key decisions or action items
+- Overall tone and outcome
+────────────────────────────────────────────
+✅ Session saved to: data/transcript_2025-05-24T10-30-00-000Z.json
+```
+
+### Testing System Audio Capture
+
+Use the provided script to verify system audio capture:
+
+```bash
+./test_system_audio.sh
+```
+
+This script records 5 seconds of system audio, checks the raw PCM output, and optionally converts it to WAV for playback.
+
+## Configuration
+
+Environment variables can be managed in `.env`:
+
+```env
+OPENROUTER_API_KEY=...
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+OLLAMA_BASE_URL=http://127.0.0.1:11434/api
+WHISPER_URL=http://127.0.0.1:8080/inference
 ```
 
 ## Architecture
 
-### Components
-
-1. **main.ts** - Main Deno application
-   - Orchestrates recording and feedback
-   - Handles microphone recording via SoX
-   - Processes audio through Whisper
-   - Generates AI feedback via OpenRouter
-
-2. **SystemAudioCapture** - Swift wrapper
-   - Uses ScreenCaptureKit for system audio
-   - Outputs raw PCM audio to stdout
-   - Handles audio format conversion
-
-3. **Whisper Server** - Local STT
-   - Converts audio to text
-   - Runs locally for privacy
-
-4. **OpenRouter** - AI feedback
-   - Analyzes conversation context
-   - Provides communication insights
+- **main.ts**: Orchestrates audio capture, transcription, feedback, and summary.
+- **registry.ts**: Manages AI provider integrations.
+- **SystemAudioCapture** (Swift): Captures system audio via ScreenCaptureKit.
+- **test_system_audio.sh**: Validates system audio pipeline.
+- **setup.sh**: Simplifies initial setup.
 
 ### Audio Pipeline
 
 ```
-Microphone → SoX → Raw PCM → TypeScript Handler → Whisper → AI Analysis
-System Audio → Swift → Raw PCM → TypeScript Handler → Whisper → AI Analysis
+Microphone → SoX → Raw PCM → main.ts → Whisper → AI Feedback
+System Audio → Swift → Raw PCM → main.ts → Whisper → AI Feedback
 ```
 
-## Configuration
+### AI Provider Registry
 
-The application can be configured using command-line options:
+Supports multiple providers via a unified interface:
 
-```bash
-deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env main.ts [options]
-```
+- **OpenRouter** (`OPENROUTER_API_KEY`)
+- **OpenAI** (`OPENAI_API_KEY`)
+- **Anthropic** (`ANTHROPIC_API_KEY`)
+- **Ollama** (local, `OLLAMA_BASE_URL`)
 
-Available options:
+## Contributing
 
-- `-i, --interval <ms>` - Feedback interval in milliseconds (default: 15000)
-- `-w, --whisper-url <url>` - Whisper server URL (default: http://127.0.0.1:8080/inference)
-- `-d, --data-dir <path>` - Data directory path for saving transcripts (default: ./data)
-- `-m, --max-transcriptions <number>` - Maximum number of recent transcriptions to use for feedback (default: 100)
-- `-p, --prompt <text>` - Custom feedback prompt template
-- `-o, --model <model>` - OpenRouter model to use for feedback (default: google/gemini-2.0-flash-001)
+Contributions welcome! Please:
 
-Example with custom options:
-```bash
-deno run --allow-env --allow-net --allow-read --allow-write --allow-run --env-file=.env main.ts \
-  --interval 30000 \
-  --whisper-url http://localhost:8080/inference \
-  --data-dir ./my-transcripts \
-  --max-transcriptions 50 \
-  --model "anthropic/claude-sonnet-4"
-```
+1. Fork the repository.
+2. Create a new branch (`git checkout -b feature/my-feature`).
+3. Commit changes (`git commit -m 'Add feature'`).
+4. Push to branch (`git push origin feature/my-feature`).
+5. Open a Pull Request.
 
-## Troubleshooting
-
-### Permission Issues
-- Grant Screen Recording permission in System Preferences → Security & Privacy → Screen Recording
-- Grant Microphone permission when prompted
-
-### Audio Issues
-- Ensure SoX is installed: `brew install sox`
-- Test microphone: `sox -t coreaudio default test.wav trim 0 5`
-- Check system audio devices: `SwitchAudioSource -a`
-
-### Whisper Server Issues
-- Ensure server is running on port 8080
-- Test with: `curl -X POST -F "file=@test.wav" http://127.0.0.1:8080/inference`
-
-### Swift Build Issues
-- Ensure Xcode Command Line Tools are installed
-- Check Swift version: `swift --version`
-
-## Privacy
-
-- All audio processing happens locally
-- Only transcribed text is sent to OpenRouter for feedback (TODO: Add local LLM server support)
-- Raw audio is never transmitted externally
-- Transcripts are saved locally in the `data/` directory
+Ensure code is formatted and documented.
 
 ## License
 
-This project is for educational and personal use. Please ensure compliance with local laws regarding call recording and consent. 
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details. 
