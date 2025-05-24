@@ -79,7 +79,7 @@ Custom options (using the script):
 
 - `-i, --interval <ms>`: Feedback interval in milliseconds (default: 15000).
 - `-d, --data-dir <path>`: Path to save transcripts (default: `./data`).
-- `-m, --max-transcriptions <n>`: Maximum recent transcripts for feedback (default: 100).
+- `-m, --max-transcriptions <n>`: Maximum recent transcripts for feedback (default: 50).
 - `-p, --prompt <text>`: Feedback prompt template.
 - `-s, --summary-prompt <text>`: Summary prompt template.
 - `-o, --model <provider:model>`: AI model (e.g., `openrouter:google/gemini-2.0-flash-001`).
