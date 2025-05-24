@@ -2,22 +2,6 @@
 
 A macOS application that provides real-time, AI-powered feedback during phone calls by capturing system and microphone audio locally, transcribing speech with Whisper, and analyzing conversation dynamics.
 
-## Table of Contents
-
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Real-Time Feedback](#real-time-feedback)
-  - [Stopping and Summary](#stopping-and-summary)
-  - [Testing System Audio Capture](#testing-system-audio-capture)
-- [Configuration](#configuration)
-- [Architecture](#architecture)
-- [Audio Pipeline](#audio-pipeline)
-- [AI Provider Registry](#ai-provider-registry)
-- [Contributing](#contributing)
-- [License](#license)
-
 ## Features
 
 - **Invisible to other party**: Captures system audio and microphone separately without interference.
@@ -26,7 +10,7 @@ A macOS application that provides real-time, AI-powered feedback during phone ca
 - **Conversation summary**: Automatically generates a summary at the end of the call.
 - **Transcript logging**: Saves timestamped JSON transcripts in `data/`.
 - **Customizable**: Adjust interval, prompts, model selection, and data directory via CLI flags.
-- **Multiple AI providers**: Supports OpenRouter, OpenAI, Anthropic, and local Ollama.
+- **Multiple AI providers**: Supports OpenRouter, OpenAI, Anthropic, Google, and local Ollama.
 
 ## Prerequisites
 
@@ -35,10 +19,11 @@ A macOS application that provides real-time, AI-powered feedback during phone ca
 - **Swift 5.9+** (Xcode Command Line Tools)
 - **SoX** (`brew install sox`)
 - **whisper.cpp** (local STT server)
-- **API keys / endpoints**:
+- **API keys / endpoints configured in `.env`**:
   - `OPENROUTER_API_KEY` (OpenRouter)
   - `OPENAI_API_KEY` (OpenAI)
   - `ANTHROPIC_API_KEY` (Anthropic)
+  - `GOOGLE_GENERATIVE_AI_API_KEY` (Google)
   - `OLLAMA_BASE_URL` (for local Ollama server, default `http://127.0.0.1:11434/api`)
   - `WHISPER_CPP_URL` (URL for the local whisper.cpp server, default `http://127.0.0.1:8080/inference`)
 
@@ -123,19 +108,7 @@ Use the provided script to verify system audio capture:
 ./test_system_audio.sh
 ```
 
-This script records 5 seconds of system audio, checks the raw PCM output, and optionally converts it to WAV for playback.
-
-## Configuration
-
-Environment variables can be managed in `.env`:
-
-```env
-OPENROUTER_API_KEY=...
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-OLLAMA_BASE_URL=http://127.0.0.1:11434/api
-WHISPER_URL=http://127.0.0.1:8080/inference
-```
+This script records 5 seconds of system audio, checks the raw PCM output, and converts it to WAV for playback.
 
 ## Architecture
 
@@ -151,15 +124,6 @@ WHISPER_URL=http://127.0.0.1:8080/inference
 Microphone → SoX → Raw PCM → main.ts → Whisper → AI Feedback
 System Audio → Swift → Raw PCM → main.ts → Whisper → AI Feedback
 ```
-
-### AI Provider Registry
-
-Supports multiple providers via a unified interface:
-
-- **OpenRouter** (`OPENROUTER_API_KEY`)
-- **OpenAI** (`OPENAI_API_KEY`)
-- **Anthropic** (`ANTHROPIC_API_KEY`)
-- **Ollama** (local, `OLLAMA_BASE_URL`)
 
 ## Contributing
 
